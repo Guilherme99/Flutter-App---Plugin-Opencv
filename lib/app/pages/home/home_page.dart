@@ -1,13 +1,20 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+//import 'package:flutter_modular/flutter_modular.dart';
 // ignore: import_of_legacy_library_into_null_safe
 import 'package:opencv/core/core.dart';
 // ignore: import_of_legacy_library_into_null_safe
 import 'package:opencv/opencv.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
-
+//import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:image_cropper/image_cropper.dart';
+import 'package:image_gallery_saver/image_gallery_saver.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({ Key? key }) : super(key: key);
@@ -15,8 +22,14 @@ class HomePage extends StatefulWidget {
   @override
   _HomePageState createState() => _HomePageState();
 }
-
+enum sourcePicture{ camera, gallery }
+enum AppState {
+  free,
+  cropped,
+}
 class _HomePageState extends State<HomePage> {
+
+  late AppState state;
   String _platformVersion = 'Unknown';
   dynamic res;
   Image image = Image.asset('assets/temp.png');
@@ -39,21 +52,9 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    loadImage();
+    state = AppState.free;
     initPlatformState();
-  }
-
-   Future loadImage() async {
-    file = await DefaultCacheManager().getSingleFile(urls[urlIndex]);
-
-    if (urlIndex >= urls.length - 1) {
-      urlIndex = 0;
-    } else
-      urlIndex++;
-    setState(() {
-      image = Image.file(file!);
-      preloaded = true;
-    });
+    _requestPermission();
   }
 
    Future<void> initPlatformState() async {
@@ -222,118 +223,409 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
           appBar: AppBar(
-            title: const Text('Plugin example app'),
+            title: const Text('Flutter App'),
             
           ),
-          floatingActionButton: FloatingActionButton(
-            onPressed: () {
-              loadImage();
-            },
-            child: Icon(Icons.refresh),
-          ),
-          body: ListView(
-            children: <Widget>[
-            /*   Center(
-                child: Text('Running on: $_platformVersion\n'),
-              ), */
-              Padding(padding: EdgeInsets.all(20.0),
-              child: Column(children: [
-              Row(
-                children: [
-                  Text("Imagem Fonte:", 
-                  style: TextStyle(color: Colors.black.withOpacity(1.0), fontSize: 15, decorationStyle: TextDecorationStyle.wavy, fontFamily: 'Trajan Pro'),
-                  ),
-                ],
-              ),
-              preloaded
+          
+          floatingActionButton: 
+          preloaded
                   ? 
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(10.0),
-                    child: image
-                  )
-                  : Text("There might be an error in loading your asset."),
-
-              ],)
-              ),              
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: <Widget>[
-                  DropdownButton<String>(
-                    value: dropdownValue,
-                    icon: Icon(Icons.arrow_downward),
-                    iconSize: 24,
-                    elevation: 16,
-                    underline: Container(
-                      color: Colors.grey,
-                      height: 2,
-                    ),
-                    onChanged: (String? newValue) {
-                      setState(() {
-                        dropdownValue = newValue!;
-                      });
-                    },
-                    items: <String>[
-                      'None',
-                      'blur',
-                      'GaussianBlur',
-                      'medianBlur',
-                      'bilateralFilter',
-                      'boxFilter',
-                      'sqrBoxFilter',
-                      'filter2D',
-                      'dilate',
-                      'erode',
-                      'morphologyEx',
-                      'pyrUp',
-                      'pyrDown',
-                      'pyrMeanShiftFiltering',
-                      'threshold',
-                      'adaptiveThreshold',
-                      'copyMakeBorder',
-                      'sobel',
-                      'scharr',
-                      'laplacian',
-                      'distanceTransform',
-                      'resize',
-                      'applyColorMap',
-                      'houghLines',
-                      'houghLinesProbabilistic',
-                      'houghCircles',
-                      'warpPerspectiveTransform',
-                      'grabCut'
-                    ].map<DropdownMenuItem<String>>((String value) {
-                      return DropdownMenuItem<String>(
-                        value: value,
-                        child: Text(value),
-                      );
-                    }).toList(),
-                  ),
-                  ElevatedButton(
-                    onPressed: () {
-                      runAFunction(dropdownValue);
-                    },
-                    child: Text('Run'),
-                  ),
+           Column(
+             mainAxisAlignment: MainAxisAlignment.end,
+             crossAxisAlignment: CrossAxisAlignment.end,
+             children: [
+               FloatingActionButton(
+                onPressed: () {
+                  //_saveImage(imageNew.image);
+                  print(imageNew);
+                  _showMyDialog();
+                },
+                child: Icon(Icons.save),
+          ),
+          SizedBox(height: 10,),
+          FloatingActionButton(
+                onPressed: () {
+                  emptyValues();
+                },
+                child: Icon(Icons.refresh),
+          ),
+             ],
+           ) : 
+          FloatingActionButton.extended(
+            onPressed: () {},
+            label: Container(
+              child: Row(
+                children: [
+                  new IconButton(
+                            onPressed: () {
+                              if (state == AppState.free) {
+                                _imageSelected(sourcePicture.camera);
+                              } else
+                                return null;
+                            },
+                              icon: Icon(Icons.camera_alt, color: Colors.white,)),
+                              Text('|', style: TextStyle(fontSize: 22),),
+                              new IconButton(
+                      onPressed: () {
+                        if (state == AppState.free) {
+                          _imageSelected(sourcePicture.gallery);
+                        } else
+                          return null;
+                      }, 
+                      icon: Icon(Icons.photo_library, color: Colors.white,)),
                 ],
               ),
+                ),
+            ),
+          body: Center(
+            child: ListView(
+              shrinkWrap: true,
+              children: <Widget>[
+                /* Center(
+                  child: Text('Running on: $_platformVersion\n'),
+                ), */
               Padding(
-                padding: const EdgeInsets.all(20.0),
+                padding: EdgeInsets.all(20.0),
                 child: Column(
                   children: [
-                    Row(
+               /*    Container(
+                    decoration: BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.rectangle,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    /* child: 
+                          state == AppState.cropped?
+                    (
+                      Container()
+                    )
+                    :
+                    Padding(padding: EdgeInsets.all(10),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Text("Imagem Processada:"),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text("Selecionar Imagem", style: TextStyle(color: Colors.white, fontSize: 15),),
+                          ],
+                        ),
+                         Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            new IconButton(
+                                onPressed: () {
+                                  if (state == AppState.free) {
+                                    _imageSelected(sourcePicture.camera);
+                                  } else
+                                    return null;
+                                },
+                                 icon: Icon(Icons.camera_alt, color: Colors.white,)),
+                            new IconButton(
+                              onPressed: () {
+                                if (state == AppState.free) {
+                                  _imageSelected(sourcePicture.gallery);
+                                } else
+                                  return null;
+                              }, 
+                              icon: Icon(Icons.photo_library, color: Colors.white,)),
+                          ],
+                        ),
+                      ],
+                    )                  
+                    ) , */
+                    ), */
+                    preloaded
+                    ? 
+                    Column(
+                      children: [
+                        Container(
+                          margin: EdgeInsets.only(bottom: 10),
+                          
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text("Imagem Fonte:", style: TextStyle(color: Colors.black, fontSize: 16),),
+                            ],
+                          ),
+                        ),
+                        Container(
+                           decoration: BoxDecoration(
+                            shape: BoxShape.rectangle,
+                            borderRadius: BorderRadius.circular(10),
+                            color: Colors.white,
+                            gradient: LinearGradient(
+                                begin: FractionalOffset.topCenter,
+                                end: FractionalOffset.bottomCenter,
+                                colors: [
+                                  Colors.red.withOpacity(0.6),
+                                  Colors.red.withOpacity(0.6),
+                                ],
+                                stops: [
+                                  0.0,
+                                  1.0
+                                ])),
+                          width: MediaQuery.of(context).size.width,
+                          /* height: MediaQuery.of(context).size.height*0.5, */
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                             ClipRRect(
+                                borderRadius: BorderRadius.circular(10.0),
+                                child: image,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    )
+                    : Container(
+                      margin: EdgeInsets.only(top: 40),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.rectangle,
+                        borderRadius: BorderRadius.circular(10),
+                        color: Colors.red,
+                      ),
+                      width: 300,
+                      child: Padding(
+                        padding: const EdgeInsets.all(10.0),
+                        child: Column(
+                          children: [
+                            IconButton(onPressed: () => {}, icon: Icon(Icons.visibility_off, color: Colors.white,)),
+                            Text("Nenhuma Imagem Selecionada", style: TextStyle(color: Colors.white),),
+                          ],
+                        ),
+                      ),
+                    ),              
+                ],
+                ),
+                ),
+                preloaded
+                    ? 
+                Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text("Filtro para a Imagem Fonte:", 
+                          style: TextStyle(color: Colors.black.withOpacity(1.0), fontSize: 15, decorationStyle: TextDecorationStyle.wavy),
+                        ),
+                      ],
+                    ), 
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: <Widget>[
+                        DropdownButton<String>(
+                          value: dropdownValue,
+                          icon: Icon(Icons.arrow_downward),
+                          iconSize: 24,
+                          elevation: 16,
+                          underline: Container(
+                            color: Colors.grey,
+                            height: 2,
+                          ),
+                          onChanged: (String? newValue) {
+                            setState(() {
+                              dropdownValue = newValue!;
+                            });
+                          },
+                          items: <String>[
+                            'None',
+                            'blur',
+                            'GaussianBlur',
+                            'medianBlur',
+                            'bilateralFilter',
+                            'boxFilter',
+                            'sqrBoxFilter',
+                            'filter2D',
+                            'dilate',
+                            'erode',
+                            'morphologyEx',
+                            'pyrUp',
+                            'pyrDown',
+                            'pyrMeanShiftFiltering',
+                            'threshold',
+                            'adaptiveThreshold',
+                            'copyMakeBorder',
+                            'sobel',
+                            'scharr',
+                            'laplacian',
+                            'distanceTransform',
+                            'resize',
+                            'applyColorMap',
+                            'houghLines',
+                            'houghLinesProbabilistic',
+                            'houghCircles',
+                            'warpPerspectiveTransform',
+                            'grabCut'
+                          ].map<DropdownMenuItem<String>>((String value) {
+                            return DropdownMenuItem<String>(
+                              value: value,
+                              child: Text(value),
+                            );
+                          }).toList(),
+                        ),
                       ],
                     ),
-                    loaded ? 
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(10.0),
-                      child: imageNew
-                    ) : Container()
+                    ElevatedButton(
+                          onPressed: () {
+                            runAFunction(dropdownValue);
+                          },
+                          child: Text('Run'),
+                        ),
                   ],
-                ),
-              ),
-            ],
+                ) : Container(),
+                loaded ? 
+                Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Text("Imagem Processada:"),
+                        ],
+                      ),
+                      
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10.0),
+                        child: imageNew
+                      ) 
+                    ],
+                  ),
+                ) : Container(),
+              ],
+            ),
           ));
   }
+
+  void _imageSelected(sourcePicture sourceImage) async {
+    
+    
+    XFile? image2 = await ImagePicker().pickImage(
+        source: sourceImage == sourcePicture.camera ? ImageSource.camera : ImageSource.gallery );
+
+    /* if (image2 != null) {
+      File? croppedImage = await ImageCropper.cropImage(
+          sourcePath: image2.path,
+          aspectRatioPresets: Platform.isAndroid
+              ? [
+                  CropAspectRatioPreset.square,
+                  CropAspectRatioPreset.ratio3x2,
+                  CropAspectRatioPreset.original,
+                  CropAspectRatioPreset.ratio4x3,
+                  CropAspectRatioPreset.ratio16x9
+                ]
+              : [
+                  CropAspectRatioPreset.original,
+                  CropAspectRatioPreset.square,
+                  CropAspectRatioPreset.ratio3x2,
+                  CropAspectRatioPreset.ratio4x3,
+                  CropAspectRatioPreset.ratio5x3,
+                  CropAspectRatioPreset.ratio5x4,
+                  CropAspectRatioPreset.ratio7x5,
+                  CropAspectRatioPreset.ratio16x9
+                ],
+          androidUiSettings: AndroidUiSettings(
+              toolbarTitle: 'Cortador',
+              toolbarColor: Colors.red,
+              toolbarWidgetColor: Colors.white,
+              activeControlsWidgetColor: Colors.red,
+              initAspectRatio: CropAspectRatioPreset.original,
+              lockAspectRatio: false));
+ */
+    if (image2 != null) {
+      setState(() {
+        image = Image.file(File(image2.path)) ;
+        file = File(image2.path);
+        preloaded = true;
+      });
+
+      if(sourceImage==sourcePicture.camera){
+        _saveImage(image2);
+      }
+
+      _afterCropImage();
+     } else {
+     return ;
+    } 
+  }
+
+
+  void _saveImage(image) async {
+    var bytes;
+    Uri myUri = Uri.parse(image.path);
+    File originalImageFile = new File.fromUri(myUri);
+    await originalImageFile.readAsBytes().then((value) {
+      bytes = Uint8List.fromList(value);
+      print('leitura dos bytes completa');
+    }).catchError((onError) {
+      print('Mensagem de erro:' + onError.toString());
+    });
+    final result = await ImageGallerySaver.saveImage(Uint8List.fromList(bytes));
+   
+    print(result);
+  }
+
+  _requestPermission() async {
+    
+    Map<Permission, PermissionStatus> statuses = await [
+      Permission.storage,
+    ].request();
+
+    final info = statuses[Permission.storage].toString();
+    print(info);
+  }
+
+  void _afterCropImage() {
+    setState(() {
+      state = AppState.cropped;
+    });
+    //intervalStatusPages();
+    //Navigator.of(context).pop();
+  }
+  void emptyValues(){
+    setState(() {
+      preloaded = false;
+      image = Image.file(File(''));
+      state = AppState.free;
+      imageNew = Image.file(File(''));
+      loaded = false;
+    });
+  }
+
+    Future<void> _showMyDialog() async {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false, // user must tap button!
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Salvar Imagem'),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: const <Widget>[
+                Text('A imagem foi salva no seu dispositivo!'),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Fechar'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+  Future<File> getImageFileFromAssets(String path) async {
+  final byteData = await rootBundle.load('assets/$path');
+
+  final file = File('${(await getTemporaryDirectory()).path}/$path');
+  await file.writeAsBytes(byteData.buffer.asUint8List(byteData.offsetInBytes, byteData.lengthInBytes));
+
+  return file;
+}
 }
