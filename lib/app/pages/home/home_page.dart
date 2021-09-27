@@ -32,8 +32,9 @@ class _HomePageState extends State<HomePage> {
   late AppState state;
   String _platformVersion = 'Unknown';
   dynamic res;
-  Image image = Image.asset('assets/temp.png');
-  Image imageNew = Image.asset('assets/temp.png');
+  File image = File('');
+  String saveImage = '';
+  Image imageNew = Image.asset('');
   File? file ;
   bool preloaded = false;
   bool loaded = false;
@@ -208,9 +209,10 @@ class _HomePageState extends State<HomePage> {
           print("No function selected");
           break;
       }
-
+      
       setState(() {
         imageNew = Image.memory(res);
+        saveImage = uint8ListTob64(res);
         loaded = true;
       });
     } on PlatformException {
@@ -234,14 +236,21 @@ class _HomePageState extends State<HomePage> {
              mainAxisAlignment: MainAxisAlignment.end,
              crossAxisAlignment: CrossAxisAlignment.end,
              children: [
-               FloatingActionButton(
-                onPressed: () {
-                  //_saveImage(imageNew.image);
-                  print(imageNew);
-                  _showMyDialog();
+              FloatingActionButton(
+                onPressed: () async {
+
+                  if(saveImage!=''){
+                    var result = saveImage.split(',');
+                    File imageFile =  await _createFileFromString(result[1]);
+                  //  print(imageFile);
+                    _saveImage(imageFile);
+
+                    _showMyDialog();
+                  }
+                  return ;
                 },
                 child: Icon(Icons.save),
-          ),
+          ) ,
           SizedBox(height: 10,),
           FloatingActionButton(
                 onPressed: () {
@@ -373,7 +382,7 @@ class _HomePageState extends State<HomePage> {
                             children: [
                              ClipRRect(
                                 borderRadius: BorderRadius.circular(10.0),
-                                child: image,
+                                child: Image.file(image),
                               ),
                             ],
                           ),
@@ -383,14 +392,27 @@ class _HomePageState extends State<HomePage> {
                     : Container(
                       margin: EdgeInsets.only(top: 40),
                       decoration: BoxDecoration(
-                        shape: BoxShape.rectangle,
-                        borderRadius: BorderRadius.circular(10),
-                        color: Colors.red,
-                      ),
+                      shape: BoxShape.rectangle,
+                      borderRadius: BorderRadius.circular(10),
+                      color: Colors.white,
+                      gradient: LinearGradient(
+                          begin: FractionalOffset.topCenter,
+                          end: FractionalOffset.bottomCenter,
+                          colors: [
+                            Colors.red.withOpacity(0.6),
+                            Colors.red,
+                          ],
+                          stops: [
+                            0.0,
+                            1.0
+                          ])),
                       width: 300,
+                      height: MediaQuery.of(context).size.height*0.3,
                       child: Padding(
                         padding: const EdgeInsets.all(10.0),
                         child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             IconButton(onPressed: () => {}, icon: Icon(Icons.visibility_off, color: Colors.white,)),
                             Text("Nenhuma Imagem Selecionada", style: TextStyle(color: Colors.white),),
@@ -505,7 +527,7 @@ class _HomePageState extends State<HomePage> {
     XFile? image2 = await ImagePicker().pickImage(
         source: sourceImage == sourcePicture.camera ? ImageSource.camera : ImageSource.gallery );
 
-    /* if (image2 != null) {
+    if (image2 != null) {
       File? croppedImage = await ImageCropper.cropImage(
           sourcePath: image2.path,
           aspectRatioPresets: Platform.isAndroid
@@ -533,19 +555,19 @@ class _HomePageState extends State<HomePage> {
               activeControlsWidgetColor: Colors.red,
               initAspectRatio: CropAspectRatioPreset.original,
               lockAspectRatio: false));
- */
-    if (image2 != null) {
-      setState(() {
-        image = Image.file(File(image2.path)) ;
-        file = File(image2.path);
-        preloaded = true;
-      });
 
-      if(sourceImage==sourcePicture.camera){
-        _saveImage(image2);
-      }
 
-      _afterCropImage();
+          setState(() {
+            image = croppedImage! ;
+            file = croppedImage;
+            preloaded = true;
+          });
+
+          if(sourceImage==sourcePicture.camera){
+            _saveImage(image2);
+          }
+
+          _afterCropImage();
      } else {
      return ;
     } 
@@ -587,9 +609,9 @@ class _HomePageState extends State<HomePage> {
   void emptyValues(){
     setState(() {
       preloaded = false;
-      image = Image.file(File(''));
+      image = File('');
       state = AppState.free;
-      imageNew = Image.file(File(''));
+      imageNew = Image.asset('');
       loaded = false;
     });
   }
@@ -620,12 +642,19 @@ class _HomePageState extends State<HomePage> {
       },
     );
   }
-  Future<File> getImageFileFromAssets(String path) async {
-  final byteData = await rootBundle.load('assets/$path');
 
-  final file = File('${(await getTemporaryDirectory()).path}/$path');
-  await file.writeAsBytes(byteData.buffer.asUint8List(byteData.offsetInBytes, byteData.lengthInBytes));
-
-  return file;
-}
+  String uint8ListTob64(Uint8List uint8list) {
+    String base64String = base64Encode(uint8list);
+    String header = "data:image/png;base64,";
+    return header + base64String;
+  }
+  Future<File> _createFileFromString(String imageBase64) async {
+    final encodedStr = imageBase64;
+    Uint8List bytes = base64.decode(encodedStr);
+    String dir = (await getApplicationDocumentsDirectory()).path;
+    File file = File(
+        "$dir/" + DateTime.now().millisecondsSinceEpoch.toString() + ".png");
+    await file.writeAsBytes(bytes);
+    return file;
+  }
 }
